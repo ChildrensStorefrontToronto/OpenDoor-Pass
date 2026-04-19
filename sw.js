@@ -1,9 +1,10 @@
-﻿const CACHE_NAME = "opendoor-pass-v1";
+const CACHE_NAME = "opendoor-pass-v2";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./app.css",
   "./app.js",
+  "./assets/vendor/qrcode.js",
   "./manifest.webmanifest",
   "./assets/icons/icon.svg",
   "./assets/centre-logo.png",
@@ -49,7 +50,3 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
-
-
-
-
