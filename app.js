@@ -34,6 +34,20 @@ const MANIFEST_STATE = {
   objectUrl: null,
 };
 
+function getInstallMessages(language) {
+  const allMessages = window.OPENDOOR_INSTALL_MESSAGES || {};
+  const normalizedLanguage = normalizeLanguage(language, DEFAULT_PASS_LANGUAGE);
+  return allMessages[normalizedLanguage] || allMessages[DEFAULT_PASS_LANGUAGE] || {
+    heading: "Save this pass",
+    button: "Install app",
+    prompt_ready: "Install OpenDoor Pass on this device for faster access.",
+    fallback_default: "If install is available in this browser, use its Add to Home Screen or Install App option.",
+    firefox_android: "Install this pass as an app on your phone!  Go to the menu ( ⋮ ), tap 'More', then 'Add app to Home screen'.",
+    safari_ios: "Install this pass as an app on your phone!  Go to 'Share' (you might have to search for it a bit), then 'Add to Home Screen'. The pass will show up as a little app on your home screen.",
+    chromium_mobile: "Install this pass as an app on your phone!  You might get a handy pop-up to help you.  If it doesn't work, go to the menu ( ⋮ ), tap 'Add to home screen' (you might have to scroll down a bit). A couple of options should pop up -- you want 'Install'.",
+  };
+}
+
 function detectBrowser() {
   const ua = navigator.userAgent || "";
 
@@ -52,22 +66,37 @@ function isStandaloneMode() {
   return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 }
 
+function resolveInstallLanguage() {
+  const setupProfile = parseSetupFromUrl();
+  if (setupProfile) {
+    return resolveProfileLanguage(setupProfile);
+  }
+
+  const savedProfile = loadProfile();
+  if (savedProfile) {
+    return resolveProfileLanguage(savedProfile);
+  }
+
+  return DEFAULT_PASS_LANGUAGE;
+}
+
 function getInstallMessage() {
   const browser = detectBrowser();
+  const messages = getInstallMessages(resolveInstallLanguage());
 
   if (browser.isFirefox && browser.isAndroid) {
-    return "Install this pass as an app on your phone!  Go to the menu ( ⋮ ), tap 'More', then 'Add app to Home screen'.";
+    return messages.firefox_android;
   }
 
   if (browser.isSafari && browser.isIOS) {
-    return "Install this pass as an app on your phone!  Go to 'Share' (you might have to search for it a bit), then '-> 'Add to Home Screen'.  The pass will show up as a little app on your home screen.";
+    return messages.safari_ios;
   }
 
   if (browser.isChrome || browser.isEdge || browser.isSamsungInternet) {
-    return "Install this pass as an app on your phone!  You might get a handy pop-up to help you.  If it doesn't work, go to the menu ( ⋮ ), tap 'Add to home screen (you might have to scroll down a bit).  A couple of options should pop up -- you want 'Install'";
+    return messages.chromium_mobile;
   }
 
-  return "If install is available in this browser, use its Add to Home Screen or Install App option.";
+  return messages.fallback_default;
 }
 
 async function updateInstallManifestForCurrentPage() {
@@ -124,14 +153,16 @@ function ensureInstallUi() {
   wrap.className = "install-panel";
   wrap.hidden = true;
 
+  const messages = getInstallMessages(resolveInstallLanguage());
+
   const heading = document.createElement("p");
   heading.className = "install-heading";
-  heading.textContent = "Save this pass";
+  heading.textContent = messages.heading;
 
   const button = document.createElement("button");
   button.type = "button";
   button.className = "install-button";
-  button.textContent = "Install app";
+  button.textContent = messages.button;
   button.hidden = true;
 
   const message = document.createElement("p");
@@ -140,7 +171,7 @@ function ensureInstallUi() {
   wrap.append(heading, button, message);
   shell.insertBefore(wrap, opendoorLogo);
 
-  INSTALL_STATE.ui = { wrap, button, message };
+  INSTALL_STATE.ui = { wrap, heading, button, message };
   return INSTALL_STATE.ui;
 }
 
@@ -149,6 +180,10 @@ function renderInstallUi() {
   if (!ui) {
     return;
   }
+
+  const messages = getInstallMessages(resolveInstallLanguage());
+  ui.heading.textContent = messages.heading;
+  ui.button.textContent = messages.button;
 
   if (isStandaloneMode()) {
     ui.wrap.hidden = true;
@@ -161,7 +196,7 @@ function renderInstallUi() {
 
   if (INSTALL_STATE.deferredPrompt) {
     ui.button.hidden = false;
-    ui.message.textContent = "Install OpenDoor Pass on this device for faster access.";
+    ui.message.textContent = messages.prompt_ready;
     return;
   }
 
@@ -628,4 +663,3 @@ async function main() {
 }
 
 main();
-

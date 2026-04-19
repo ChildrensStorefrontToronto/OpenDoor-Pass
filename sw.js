@@ -1,9 +1,10 @@
-const CACHE_NAME = "opendoor-pass-v2";
+const CACHE_NAME = "opendoor-pass-v3";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./app.css",
   "./app.js",
+  "./install_messages.js",
   "./assets/vendor/qrcode.js",
   "./manifest.webmanifest",
   "./assets/icons/icon.svg",
