@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f4c81">
+  <title>OpenDoor Pass Test Setup QR</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --ink: #10253a;
+      --muted: #496783;
+      --line: #c8d8ea;
+      --accent: #0f4c81;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    main {
+      width: min(760px, 100%);
+      margin: 0 auto;
+      padding: 2rem 1rem 2.5rem;
+    }
+
+    h1 {
+      margin: 0 0 0.75rem;
+      font-size: clamp(1.6rem, 4vw, 2.3rem);
+    }
+
+    p {
+      line-height: 1.45;
+    }
+
+    .qr-block {
+      width: fit-content;
+      margin: 1.4rem auto;
+      padding: 0.75rem;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #ffffff;
+    }
+
+    #setup-qr {
+      display: block;
+      background: #ffffff;
+    }
+
+    .test-url {
+      margin: 1rem 0 0;
+      padding: 0.9rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #f8fbfe;
+      font-size: 0.95rem;
+      overflow-wrap: anywhere;
+    }
+
+    .label {
+      margin: 1.2rem 0 0.35rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .note {
+      color: var(--muted);
+    }
+
+    .copy-button {
+      margin-top: 0.9rem;
+      padding: 0.7rem 1rem;
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>OpenDoor Pass Test Setup QR</h1>
+    <p>Scan this with your phone to simulate the kiosk-generated setup QR. It points at the public GitHub Pages URL and uses a sample family login token.</p>
+
+    <div class="qr-block">
+      <canvas id="setup-qr" width="320" height="320" aria-label="Test setup QR code"></canvas>
+    </div>
+
+    <button id="copy-url" type="button" class="copy-button">Copy test URL</button>
+
+    <p class="label">Test URL</p>
+    <p id="test-url" class="test-url"></p>
+
+    <p class="note">Expected result: the phone opens OpenDoor Pass, redirects into Centre 1, stores the sample pass, and displays family 123.</p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script>
+    const TEST_URL = "https://childrensstorefronttoronto.github.io/OpenDoor-Pass/?v=1&centre_id=1&lang=en-CA&default_lang=en-CA&family_scan=F%7C123%7CdemoKey123";
+
+    const urlEl = document.getElementById("test-url");
+    const canvas = document.getElementById("setup-qr");
+    const copyButton = document.getElementById("copy-url");
+
+    urlEl.textContent = TEST_URL;
+
+    function drawPlaceholder(message) {
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#f8fbfe";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#496783";
+      ctx.font = "16px Segoe UI";
+      ctx.textAlign = "center";
+      ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+    }
+
+    function renderQrFromRemoteImage(text) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve();
+        };
+        img.onerror = () => reject(new Error("remote_qr_failed"));
+        img.src = "https://api.qrserver.com/v1/create-qr-code/?size=" + canvas.width + "x" + canvas.height + "&data=" + encodeURIComponent(text);
+      });
+    }
+
+    async function renderQr(text) {
+      if (window.QRCode && window.QRCode.toCanvas) {
+        try {
+          await window.QRCode.toCanvas(canvas, text, {
+            margin: 1,
+            width: canvas.width,
+            color: {
+              dark: "#000000",
+              light: "#ffffff",
+            },
+          });
+          return;
+        } catch {
+          // Fall through to remote-image fallback.
+        }
+      }
+
+      try {
+        await renderQrFromRemoteImage(text);
+      } catch {
+        drawPlaceholder("QR unavailable");
+      }
+    }
+
+    copyButton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(TEST_URL);
+        copyButton.textContent = "Copied";
+      } catch {
+        copyButton.textContent = "Copy failed";
+      }
+    });
+
+    drawPlaceholder("Loading QR...");
+    renderQr(TEST_URL);
+  </script>
+</body>
+</html>
