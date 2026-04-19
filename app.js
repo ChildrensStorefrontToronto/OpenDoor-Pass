@@ -56,15 +56,15 @@ function getInstallMessage() {
   const browser = detectBrowser();
 
   if (browser.isFirefox && browser.isAndroid) {
-    return "Firefox on Android does not support the app-install prompt. Use the browser menu and add this page to your home screen.";
+    return "Install this pass as an app on your phone!  Go to the menu ( ⋮ ), tap 'More', then 'Add app to Home screen'.";
   }
 
   if (browser.isSafari && browser.isIOS) {
-    return "Use Safari Share -> Add to Home Screen to install this pass.";
+    return "Install this pass as an app on your phone!  Go to 'Share' (you might have to search for it a bit), then '-> 'Add to Home Screen'.  The pass will show up as a little app on your home screen.";
   }
 
   if (browser.isChrome || browser.isEdge || browser.isSamsungInternet) {
-    return "This browser can install the pass when it decides the app is eligible.";
+    return "Install this pass as an app on your phone!  You might get a handy pop-up to help you.  If it doesn't work, go to the menu ( ⋮ ), tap 'Add to home screen (you might have to scroll down a bit).  A couple of options should pop up -- you want 'Install'";
   }
 
   return "If install is available in this browser, use its Add to Home Screen or Install App option.";
