@@ -1,7 +1,7 @@
 ﻿{
-  "name": "The Children's Storefront",
-  "short_name": "The Children's Storefront",
-  "description": "Family check-in pass for The Children's Storefront.",
+  "name": "OpenDoor Pass",
+  "short_name": "OpenDoor Pass",
+  "description": "Family check-in pass for OpenDoor kiosks.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -9,16 +9,9 @@
   "theme_color": "#0f4c81",
   "icons": [
     {
-      "src": "./branding/1/icon_192.png",
-      "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "any"
-    },
-    {
-      "src": "./branding/1/icon_512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any"
+      "src": "./assets/icons/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
     }
   ]
 }

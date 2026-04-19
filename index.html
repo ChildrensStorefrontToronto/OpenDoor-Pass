@@ -4,7 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f4c81">
-  <title>The Children's Storefront</title>
+  <title>OpenDoor Pass</title>
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const centreId = params.get("centre_id");
+      if (!centreId) return;
+      const currentPath = window.location.pathname.replace(/\/+$/, "");
+      if (currentPath.endsWith("/centre/" + centreId)) return;
+      const targetUrl = new URL("./centre/" + encodeURIComponent(centreId) + "/", window.location.href);
+      targetUrl.search = window.location.search;
+      window.location.replace(targetUrl.toString());
+    }());
+  </script>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./app.css">

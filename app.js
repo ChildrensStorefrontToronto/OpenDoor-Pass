@@ -6,10 +6,23 @@ const FAMILY_WORD_BY_LANGUAGE = {
   "fr-CA": "Famille",
 };
 
+const HTML_ROOT = document.documentElement;
+const APP_BASE = HTML_ROOT.dataset.appBase || ".";
+const BRANDING_BASE = HTML_ROOT.dataset.brandingBase || "./branding";
+const FORCED_CENTRE_ID = Number.parseInt(HTML_ROOT.dataset.centreId || "", 10);
+
+function resolveAppUrl(relativePath) {
+  return new URL(relativePath, new URL(APP_BASE + "/", window.location.href)).href;
+}
+
+function resolveBrandingUrl(relativePath) {
+  return new URL(relativePath, new URL(BRANDING_BASE + "/", window.location.href)).href;
+}
+
 const DEFAULT_BRANDING = {
   centre_name: "Family",
-  centre_logo: "./assets/centre-logo.png",
-  opendoor_logo: "./assets/opendoor-logo.png",
+  centre_logo: resolveAppUrl("./assets/centre-logo.png"),
+  opendoor_logo: resolveAppUrl("./assets/opendoor-logo.png"),
 };
 
 function parseFamilyIdFromScan(scanText) {
@@ -146,7 +159,7 @@ async function loadBranding(centreId) {
     return DEFAULT_BRANDING;
   }
 
-  const brandingUrl = `./branding/${centreId}/branding.json`;
+  const brandingUrl = resolveBrandingUrl(`./${centreId}/branding.json`);
   try {
     const response = await fetch(brandingUrl, { cache: "no-cache" });
     if (!response.ok) {
@@ -169,9 +182,14 @@ async function updateUi(profile) {
   const centreLogoEl = document.querySelector(".centre-logo");
   const opendoorLogoEl = document.querySelector(".opendoor-logo");
 
+  const fallbackCentreId = Number.isInteger(FORCED_CENTRE_ID) && FORCED_CENTRE_ID > 0
+    ? FORCED_CENTRE_ID
+    : null;
+
   if (!profile) {
-    centreLogoEl.src = DEFAULT_BRANDING.centre_logo;
-    opendoorLogoEl.src = DEFAULT_BRANDING.opendoor_logo;
+    const fallbackBranding = fallbackCentreId ? await loadBranding(fallbackCentreId) : DEFAULT_BRANDING;
+    centreLogoEl.src = fallbackBranding.centre_logo;
+    opendoorLogoEl.src = fallbackBranding.opendoor_logo;
     familyNameEl.textContent = "Family";
     familyIdEl.textContent = "ID: --";
     await renderQr("");
@@ -210,7 +228,7 @@ async function main() {
 
   if ("serviceWorker" in navigator) {
     try {
-      await navigator.serviceWorker.register("./sw.js");
+      await navigator.serviceWorker.register(resolveAppUrl("./sw.js"));
     } catch {
       // Non-fatal for scaffold.
     }

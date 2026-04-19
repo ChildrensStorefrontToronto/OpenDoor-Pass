@@ -11,7 +11,10 @@ const CORE_ASSETS = [
   "./branding/1/branding.json",
   "./branding/1/centre-logo.png",
   "./branding/1/icon_192.png",
-  "./branding/1/icon_512.png"
+  "./branding/1/icon_512.png",
+  "./centre/1/",
+  "./centre/1/index.html",
+  "./centre/1/manifest.webmanifest"
 ];
 
 self.addEventListener("install", (event) => {
