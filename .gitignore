@@ -1,0 +1,12 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# JS runtime
+node_modules/
+
+# Build outputs
+dist/
+build/

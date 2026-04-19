@@ -1,0 +1,24 @@
+﻿{
+  "name": "OpenDoor Pass",
+  "short_name": "OD Pass",
+  "description": "Family check-in pass for OpenDoor kiosks.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f4c81",
+  "icons": [
+    {
+      "src": "./branding/1/icon_192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "./branding/1/icon_512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    }
+  ]
+}

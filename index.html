@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f4c81">
+  <title>OpenDoor Pass</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./app.css">
+</head>
+<body>
+  <main class="shell" aria-live="polite">
+    <img src="./assets/centre-logo.png" alt="Centre logo" class="centre-logo">
+
+    <div class="qr-wrap">
+      <canvas id="pass-qr" width="280" height="280" aria-label="Family login QR code"></canvas>
+    </div>
+
+    <p id="family-name" class="family-line">Family</p>
+    <p id="family-id" class="id-line">ID: --</p>
+
+    <img src="./assets/opendoor-logo.png" alt="OpenDoor" class="opendoor-logo">
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js" defer></script>
+  <script src="./app.js" defer></script>
+</body>
+</html>
+
