@@ -55,6 +55,46 @@ body {
   text-align: center;
 }
 
+.install-panel {
+  width: min(420px, 92%);
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fbfe;
+  text-align: center;
+}
+
+.install-heading {
+  margin: 0 0 0.45rem;
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
+.install-button {
+  margin: 0 auto 0.55rem;
+  padding: 0.7rem 1rem;
+  min-width: 180px;
+  border: 0;
+  border-radius: 999px;
+  background: #0f4c81;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.install-button:hover {
+  background: #0b3d67;
+}
+
+.install-message {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 .opendoor-logo {
   width: min(260px, 60%);
   height: auto;

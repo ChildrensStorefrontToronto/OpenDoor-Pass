@@ -25,6 +25,150 @@ const DEFAULT_BRANDING = {
   opendoor_logo: resolveAppUrl("./assets/opendoor-logo.png"),
 };
 
+const INSTALL_STATE = {
+  deferredPrompt: null,
+  ui: null,
+};
+
+function detectBrowser() {
+  const ua = navigator.userAgent || "";
+
+  return {
+    isAndroid: /Android/i.test(ua),
+    isIOS: /iPhone|iPad|iPod/i.test(ua),
+    isFirefox: /Firefox/i.test(ua),
+    isEdge: /Edg\//i.test(ua),
+    isSamsungInternet: /SamsungBrowser/i.test(ua),
+    isChrome: /Chrome|CriOS/i.test(ua) && !/Edg\/|OPR\/|SamsungBrowser|Firefox/i.test(ua),
+    isSafari: /Safari/i.test(ua) && !/Chrome|CriOS|Edg\/|OPR\/|Firefox/i.test(ua),
+  };
+}
+
+function isStandaloneMode() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+function getInstallMessage() {
+  const browser = detectBrowser();
+
+  if (browser.isFirefox && browser.isAndroid) {
+    return "Firefox on Android does not support the app-install prompt. Use the browser menu and add this page to your home screen.";
+  }
+
+  if (browser.isSafari && browser.isIOS) {
+    return "Use Safari Share -> Add to Home Screen to install this pass.";
+  }
+
+  if (browser.isChrome || browser.isEdge || browser.isSamsungInternet) {
+    return "This browser can install the pass when it decides the app is eligible.";
+  }
+
+  return "If install is available in this browser, use its Add to Home Screen or Install App option.";
+}
+
+function ensureInstallUi() {
+  if (INSTALL_STATE.ui) {
+    return INSTALL_STATE.ui;
+  }
+
+  const shell = document.querySelector(".shell");
+  const opendoorLogo = document.querySelector(".opendoor-logo");
+  if (!shell || !opendoorLogo) {
+    return null;
+  }
+
+  const wrap = document.createElement("section");
+  wrap.className = "install-panel";
+  wrap.hidden = true;
+
+  const heading = document.createElement("p");
+  heading.className = "install-heading";
+  heading.textContent = "Save this pass";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "install-button";
+  button.textContent = "Install app";
+  button.hidden = true;
+
+  const message = document.createElement("p");
+  message.className = "install-message";
+
+  wrap.append(heading, button, message);
+  shell.insertBefore(wrap, opendoorLogo);
+
+  INSTALL_STATE.ui = { wrap, button, message };
+  return INSTALL_STATE.ui;
+}
+
+function renderInstallUi() {
+  const ui = ensureInstallUi();
+  if (!ui) {
+    return;
+  }
+
+  if (isStandaloneMode()) {
+    ui.wrap.hidden = true;
+    ui.button.hidden = true;
+    ui.message.textContent = "";
+    return;
+  }
+
+  ui.wrap.hidden = false;
+
+  if (INSTALL_STATE.deferredPrompt) {
+    ui.button.hidden = false;
+    ui.message.textContent = "Install OpenDoor Pass on this device for faster access.";
+    return;
+  }
+
+  ui.button.hidden = true;
+  ui.message.textContent = getInstallMessage();
+}
+
+function initializeInstallPrompt() {
+  const ui = ensureInstallUi();
+  if (!ui) {
+    return;
+  }
+
+  ui.button.addEventListener("click", async () => {
+    if (!INSTALL_STATE.deferredPrompt) {
+      renderInstallUi();
+      return;
+    }
+
+    const promptEvent = INSTALL_STATE.deferredPrompt;
+    INSTALL_STATE.deferredPrompt = null;
+    await promptEvent.prompt();
+
+    try {
+      await promptEvent.userChoice;
+    } catch {
+      // Ignore choice read failures and just refresh the UI state.
+    }
+
+    renderInstallUi();
+  });
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    INSTALL_STATE.deferredPrompt = event;
+    renderInstallUi();
+  });
+
+  window.addEventListener("appinstalled", () => {
+    INSTALL_STATE.deferredPrompt = null;
+    renderInstallUi();
+  });
+
+  window.matchMedia("(display-mode: standalone)").addEventListener("change", () => {
+    renderInstallUi();
+  });
+
+  renderInstallUi();
+}
+
 function parseFamilyIdFromScan(scanText) {
   if (!scanText || !scanText.startsWith("F|")) return null;
   const parts = scanText.split("|");
@@ -218,6 +362,8 @@ async function updateUi(profile) {
 }
 
 async function main() {
+  initializeInstallPrompt();
+
   const setupProfile = parseSetupFromUrl();
   if (setupProfile) {
     saveProfile(setupProfile);
