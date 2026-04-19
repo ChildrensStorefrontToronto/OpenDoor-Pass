@@ -1,7 +1,7 @@
 ﻿{
-  "name": "OpenDoor Pass",
-  "short_name": "OD Pass",
-  "description": "Family check-in pass for OpenDoor kiosks.",
+  "name": "The Children's Storefront",
+  "short_name": "The Children's Storefront",
+  "description": "Family check-in pass for The Children's Storefront.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
