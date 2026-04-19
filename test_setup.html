@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f4c81">
-  <title>OpenDoor Pass Test Setup QR</title>
+  <title>OpenDoor Pass Experimental Test Setup QR</title>
   <style>
     :root {
       --bg: #ffffff;
@@ -25,7 +25,7 @@
     }
 
     main {
-      width: min(760px, 100%);
+      width: min(820px, 100%);
       margin: 0 auto;
       padding: 2rem 1rem 2.5rem;
     }
@@ -72,6 +72,17 @@
       color: var(--muted);
     }
 
+    .status-box {
+      margin: 1rem 0 0;
+      padding: 0.9rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #f8fbfe;
+      color: var(--ink);
+      font-size: 0.95rem;
+      overflow-wrap: anywhere;
+    }
+
     .note {
       color: var(--muted);
     }
@@ -91,11 +102,11 @@
 </head>
 <body>
   <main>
-    <h1>OpenDoor Pass Test Setup QR</h1>
-    <p>Scan this with your phone to simulate the kiosk-generated setup QR. It points at the public GitHub Pages URL and uses a sample family login token.</p>
+    <h1>OpenDoor Pass Experimental Setup QR</h1>
+    <p>This version tests the bundled local QR library. The setup URL only carries family data; the pass page should generate and save fixed SVG and PNG QR assets on the phone during setup.</p>
 
     <div class="qr-block">
-      <canvas id="setup-qr" width="320" height="320" aria-label="Test setup QR code"></canvas>
+      <canvas id="setup-qr" width="320" height="320" aria-label="Experimental setup QR code"></canvas>
     </div>
 
     <button id="copy-url" type="button" class="copy-button">Copy test URL</button>
@@ -103,18 +114,24 @@
     <p class="label">Test URL</p>
     <p id="test-url" class="test-url"></p>
 
-    <p class="note">Expected result: the phone opens OpenDoor Pass, redirects into Centre 1, stores the sample pass, and displays family 123.</p>
+    <p class="label">Status</p>
+    <p id="status-box" class="status-box">Waiting to build setup QR.</p>
+
+    <p class="note">Expected result: scan the QR, open the pass, then install it. Later launches should show the saved QR even if the page does not regenerate it.</p>
   </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script src="./assets/vendor/qrcode.js"></script>
   <script>
-    const TEST_URL = "https://childrensstorefronttoronto.github.io/OpenDoor-Pass/?v=1&centre_id=1&lang=en-CA&default_lang=en-CA&family_scan=F%7C123%7CdemoKey123";
+    const DEPLOY_BASE_URL = "https://childrensstorefronttoronto.github.io/OpenDoor-Pass/";
 
     const urlEl = document.getElementById("test-url");
+    const statusEl = document.getElementById("status-box");
     const canvas = document.getElementById("setup-qr");
     const copyButton = document.getElementById("copy-url");
 
-    urlEl.textContent = TEST_URL;
+    function resolveTestUrl() {
+      return new URL("./?v=1&centre_id=1&lang=fr-CA&default_lang=en-CA&family_name=Bouchard&family_scan=F%7C123%7CdemoKey123", DEPLOY_BASE_URL).toString();
+    }
 
     function drawPlaceholder(message) {
       const ctx = canvas.getContext("2d");
@@ -127,55 +144,58 @@
       ctx.fillText(message, canvas.width / 2, canvas.height / 2);
     }
 
-    function renderQrFromRemoteImage(text) {
+    function renderSetupQr(text) {
       return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-          const ctx = canvas.getContext("2d");
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        if (!window.QRCode || typeof window.QRCode.toCanvas !== "function") {
+          reject(new Error("local_qr_library_unavailable"));
+          return;
+        }
+
+        window.QRCode.toCanvas(canvas, text, {
+          margin: 1,
+          width: canvas.width,
+          errorCorrectionLevel: "M",
+          color: {
+            dark: "#000000",
+            light: "#ffffff",
+          },
+        }, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
           resolve();
-        };
-        img.onerror = () => reject(new Error("remote_qr_failed"));
-        img.src = "https://api.qrserver.com/v1/create-qr-code/?size=" + canvas.width + "x" + canvas.height + "&data=" + encodeURIComponent(text);
+        });
       });
     }
 
-    async function renderQr(text) {
-      if (window.QRCode && window.QRCode.toCanvas) {
-        try {
-          await window.QRCode.toCanvas(canvas, text, {
-            margin: 1,
-            width: canvas.width,
-            color: {
-              dark: "#000000",
-              light: "#ffffff",
-            },
-          });
-          return;
-        } catch {
-          // Fall through to remote-image fallback.
-        }
-      }
+    async function main() {
+      drawPlaceholder("Building setup QR...");
+      statusEl.textContent = "Rendering setup QR with bundled local library.";
 
       try {
-        await renderQrFromRemoteImage(text);
-      } catch {
+        const testUrl = resolveTestUrl();
+        urlEl.textContent = testUrl;
+        await renderSetupQr(testUrl);
+        statusEl.textContent = "Setup QR ready.";
+      } catch (error) {
         drawPlaceholder("QR unavailable");
+        statusEl.textContent = "Failed: " + (error && error.message ? error.message : String(error));
+        urlEl.textContent = "Unavailable";
       }
     }
 
     copyButton.addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(TEST_URL);
+        await navigator.clipboard.writeText(resolveTestUrl());
         copyButton.textContent = "Copied";
       } catch {
         copyButton.textContent = "Copy failed";
       }
     });
 
-    drawPlaceholder("Loading QR...");
-    renderQr(TEST_URL);
+    main();
   </script>
 </body>
 </html>

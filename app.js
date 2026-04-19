@@ -30,6 +30,24 @@ const INSTALL_STATE = {
   ui: null,
 };
 
+const MANIFEST_STATE = {
+  objectUrl: null,
+};
+
+function getInstallMessages(language) {
+  const allMessages = window.OPENDOOR_INSTALL_MESSAGES || {};
+  const normalizedLanguage = normalizeLanguage(language, DEFAULT_PASS_LANGUAGE);
+  return allMessages[normalizedLanguage] || allMessages[DEFAULT_PASS_LANGUAGE] || {
+    heading: "Save this pass",
+    button: "Install app",
+    prompt_ready: "Install OpenDoor Pass on this device for faster access.",
+    fallback_default: "If install is available in this browser, use its Add to Home Screen or Install App option.",
+    firefox_android: "Install this pass as an app on your phone!  Go to the menu ( ⋮ ), tap 'More', then 'Add app to Home screen'.",
+    safari_ios: "Install this pass as an app on your phone!  Go to 'Share' (you might have to search for it a bit), then 'Add to Home Screen'. The pass will show up as a little app on your home screen.",
+    chromium_mobile: "Install this pass as an app on your phone!  You might get a handy pop-up to help you.  If it doesn't work, go to the menu ( ⋮ ), tap 'Add to home screen' (you might have to scroll down a bit). A couple of options should pop up -- you want 'Install'.",
+  };
+}
+
 function detectBrowser() {
   const ua = navigator.userAgent || "";
 
@@ -48,22 +66,76 @@ function isStandaloneMode() {
   return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 }
 
+function resolveInstallLanguage() {
+  const setupProfile = parseSetupFromUrl();
+  if (setupProfile) {
+    return resolveProfileLanguage(setupProfile);
+  }
+
+  const savedProfile = loadProfile();
+  if (savedProfile) {
+    return resolveProfileLanguage(savedProfile);
+  }
+
+  return DEFAULT_PASS_LANGUAGE;
+}
+
 function getInstallMessage() {
   const browser = detectBrowser();
+  const messages = getInstallMessages(resolveInstallLanguage());
 
   if (browser.isFirefox && browser.isAndroid) {
-    return "Firefox on Android does not support the app-install prompt. Use the browser menu and add this page to your home screen.";
+    return messages.firefox_android;
   }
 
   if (browser.isSafari && browser.isIOS) {
-    return "Use Safari Share -> Add to Home Screen to install this pass.";
+    return messages.safari_ios;
   }
 
   if (browser.isChrome || browser.isEdge || browser.isSamsungInternet) {
-    return "This browser can install the pass when it decides the app is eligible.";
+    return messages.chromium_mobile;
   }
 
-  return "If install is available in this browser, use its Add to Home Screen or Install App option.";
+  return messages.fallback_default;
+}
+
+async function updateInstallManifestForCurrentPage() {
+  const manifestLink = document.querySelector('link[rel="manifest"]');
+  if (!manifestLink) {
+    return;
+  }
+
+  const manifestUrl = new URL(manifestLink.href, window.location.href);
+
+  try {
+    const response = await fetch(manifestUrl.href, { cache: "no-cache" });
+    if (!response.ok) {
+      return;
+    }
+
+    const manifest = await response.json();
+    manifest.start_url = window.location.href;
+    manifest.scope = new URL("./", window.location.href).href;
+
+    if (Array.isArray(manifest.icons)) {
+      manifest.icons = manifest.icons.map((icon) => ({
+        ...icon,
+        src: new URL(icon.src, manifestUrl.href).href,
+      }));
+    }
+
+    if (MANIFEST_STATE.objectUrl) {
+      URL.revokeObjectURL(MANIFEST_STATE.objectUrl);
+    }
+
+    MANIFEST_STATE.objectUrl = URL.createObjectURL(
+      new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" })
+    );
+
+    manifestLink.href = MANIFEST_STATE.objectUrl;
+  } catch {
+    // If manifest rewriting fails, leave the static manifest in place.
+  }
 }
 
 function ensureInstallUi() {
@@ -81,14 +153,16 @@ function ensureInstallUi() {
   wrap.className = "install-panel";
   wrap.hidden = true;
 
+  const messages = getInstallMessages(resolveInstallLanguage());
+
   const heading = document.createElement("p");
   heading.className = "install-heading";
-  heading.textContent = "Save this pass";
+  heading.textContent = messages.heading;
 
   const button = document.createElement("button");
   button.type = "button";
   button.className = "install-button";
-  button.textContent = "Install app";
+  button.textContent = messages.button;
   button.hidden = true;
 
   const message = document.createElement("p");
@@ -97,7 +171,7 @@ function ensureInstallUi() {
   wrap.append(heading, button, message);
   shell.insertBefore(wrap, opendoorLogo);
 
-  INSTALL_STATE.ui = { wrap, button, message };
+  INSTALL_STATE.ui = { wrap, heading, button, message };
   return INSTALL_STATE.ui;
 }
 
@@ -106,6 +180,10 @@ function renderInstallUi() {
   if (!ui) {
     return;
   }
+
+  const messages = getInstallMessages(resolveInstallLanguage());
+  ui.heading.textContent = messages.heading;
+  ui.button.textContent = messages.button;
 
   if (isStandaloneMode()) {
     ui.wrap.hidden = true;
@@ -118,7 +196,7 @@ function renderInstallUi() {
 
   if (INSTALL_STATE.deferredPrompt) {
     ui.button.hidden = false;
-    ui.message.textContent = "Install OpenDoor Pass on this device for faster access.";
+    ui.message.textContent = messages.prompt_ready;
     return;
   }
 
@@ -177,6 +255,19 @@ function parseFamilyIdFromScan(scanText) {
   return Number.isInteger(familyId) && familyId > 0 ? familyId : null;
 }
 
+function normalizeQrSvg(svgMarkup) {
+  if (!svgMarkup || typeof svgMarkup !== "string") {
+    return "";
+  }
+
+  const trimmed = svgMarkup.trim();
+  if (!trimmed.includes("<svg") || !trimmed.includes("</svg>")) {
+    return "";
+  }
+
+  return trimmed;
+}
+
 function normalizeLanguage(language, fallbackLanguage = DEFAULT_PASS_LANGUAGE) {
   const fallback = SUPPORTED_LANGUAGES.includes(fallbackLanguage)
     ? fallbackLanguage
@@ -194,13 +285,50 @@ function resolveProfileLanguage(profile) {
   return normalizeLanguage(profile?.lang, defaultLanguage);
 }
 
+function resolveFamilyLabel(profile) {
+  if (profile?.family_name && typeof profile.family_name === "string") {
+    const trimmedName = profile.family_name.trim();
+    if (trimmedName) {
+      return trimmedName;
+    }
+  }
+
+  const familyId = parseFamilyIdFromScan(profile?.family_scan || "");
+  return familyId ? String(familyId) : "";
+}
+
+function buildDisplayStrings(profile) {
+  const familyId = parseFamilyIdFromScan(profile?.family_scan || "");
+  const familyLabel = resolveFamilyLabel(profile);
+  const language = resolveProfileLanguage(profile);
+  const familyWord = FAMILY_WORD_BY_LANGUAGE[language] || FAMILY_WORD_BY_LANGUAGE[DEFAULT_PASS_LANGUAGE];
+
+  if (!familyLabel) {
+    return {
+      family_line: familyWord,
+      id_line: "ID: --",
+    };
+  }
+
+  const familyLine = language === "fr-CA"
+    ? `${familyWord} ${familyLabel}`
+    : `${familyLabel} ${familyWord}`;
+
+  return {
+    family_line: familyLine,
+    id_line: `ID: ${familyId}`,
+  };
+}
+
 function parseSetupFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const version = params.get("v");
   const centreId = params.get("centre_id");
   const familyScan = params.get("family_scan");
+  const familyName = params.get("family_name");
   const language = params.get("lang");
   const defaultLanguage = params.get("default_lang");
+  const qrSvg = normalizeQrSvg(params.get("qr_svg"));
 
   if (!version || !centreId || !familyScan) {
     return null;
@@ -220,6 +348,11 @@ function parseSetupFromUrl() {
     v: version,
     centre_id: centreIdInt,
     family_scan: familyScan,
+    family_name: familyName || "",
+    qr_svg: qrSvg,
+    qr_png: "",
+    family_line: "",
+    id_line: "",
     lang: language || "",
     default_lang: defaultLanguage || "",
     updated_at: new Date().toISOString(),
@@ -232,6 +365,11 @@ function loadProfile() {
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || !data.family_scan || !data.centre_id) return null;
+    data.family_name = typeof data.family_name === "string" ? data.family_name : "";
+    data.qr_svg = normalizeQrSvg(data.qr_svg);
+    data.qr_png = typeof data.qr_png === "string" ? data.qr_png : "";
+    data.family_line = typeof data.family_line === "string" ? data.family_line : "";
+    data.id_line = typeof data.id_line === "string" ? data.id_line : "";
     return data;
   } catch {
     return null;
@@ -249,11 +387,17 @@ function drawQrPlaceholder(canvas, message) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#47627c";
   ctx.font = "16px Segoe UI";
-  ctx.fillText(message, 84, 145);
+  ctx.textAlign = "center";
+  ctx.fillText(message, canvas.width / 2, canvas.height / 2);
 }
 
-function renderQrFromRemoteImage(canvas, text) {
+function renderQrFromDataUrl(canvas, dataUrl) {
   return new Promise((resolve, reject) => {
+    if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
+      reject(new Error("invalid_data_url"));
+      return;
+    }
+
     const img = new Image();
     img.onload = () => {
       const ctx = canvas.getContext("2d");
@@ -261,23 +405,71 @@ function renderQrFromRemoteImage(canvas, text) {
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       resolve();
     };
-    img.onerror = () => reject(new Error("remote_qr_failed"));
-    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=${canvas.width}x${canvas.height}&data=${encodeURIComponent(text)}`;
+    img.onerror = () => reject(new Error("png_render_failed"));
+    img.src = dataUrl;
   });
 }
 
-async function renderQr(text) {
+function renderQrFromSvg(canvas, svgMarkup) {
+  return new Promise((resolve, reject) => {
+    const normalizedSvg = normalizeQrSvg(svgMarkup);
+    if (!normalizedSvg) {
+      reject(new Error("invalid_svg"));
+      return;
+    }
+
+    const blob = new Blob([normalizedSvg], { type: "image/svg+xml" });
+    const objectUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(objectUrl);
+      resolve();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("svg_render_failed"));
+    };
+    img.src = objectUrl;
+  });
+}
+
+async function renderQr(profile) {
   const canvas = document.getElementById("pass-qr");
   if (!canvas) return;
 
-  if (!text) {
+  const qrText = profile?.family_scan || "";
+  const qrSvg = normalizeQrSvg(profile?.qr_svg);
+  const qrPng = typeof profile?.qr_png === "string" ? profile.qr_png : "";
+
+  if (qrSvg) {
+    try {
+      await renderQrFromSvg(canvas, qrSvg);
+      return;
+    } catch {
+      // Fall through to text-based QR rendering if available.
+    }
+  }
+
+  if (qrPng) {
+    try {
+      await renderQrFromDataUrl(canvas, qrPng);
+      return;
+    } catch {
+      // Fall through to text-based QR rendering if available.
+    }
+  }
+
+  if (!qrText) {
     drawQrPlaceholder(canvas, "No pass loaded");
     return;
   }
 
   if (window.QRCode && window.QRCode.toCanvas) {
     try {
-      await window.QRCode.toCanvas(canvas, text, {
+      await window.QRCode.toCanvas(canvas, qrText, {
         margin: 1,
         width: canvas.width,
         color: {
@@ -287,15 +479,101 @@ async function renderQr(text) {
       });
       return;
     } catch {
-      // Fall through to remote image fallback.
+      // Fall through to placeholder.
     }
   }
 
-  try {
-    await renderQrFromRemoteImage(canvas, text);
-  } catch {
-    drawQrPlaceholder(canvas, "QR unavailable");
+  drawQrPlaceholder(canvas, "QR unavailable");
+}
+
+function generateQrSvg(text) {
+  return new Promise((resolve, reject) => {
+    if (!window.QRCode || typeof window.QRCode.toString !== "function") {
+      reject(new Error("qr_svg_generation_unavailable"));
+      return;
+    }
+
+    window.QRCode.toString(text, {
+      type: "svg",
+      errorCorrectionLevel: "M",
+      margin: 1,
+      color: {
+        dark: "#000000",
+        light: "#ffffff",
+      },
+    }, (error, svgText) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      const normalizedSvg = normalizeQrSvg(String(svgText || "")
+        .replace(/\r?\n/g, "")
+        .replace(/>\s+</g, "><")
+        .replace(/\s{2,}/g, " ")
+        .trim());
+
+      if (!normalizedSvg) {
+        reject(new Error("svg_output_invalid"));
+        return;
+      }
+
+      resolve(normalizedSvg);
+    });
+  });
+}
+
+function generateQrPng(text) {
+  return new Promise((resolve, reject) => {
+    if (!window.QRCode || typeof window.QRCode.toDataURL !== "function") {
+      reject(new Error("qr_png_generation_unavailable"));
+      return;
+    }
+
+    window.QRCode.toDataURL(text, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 280,
+      color: {
+        dark: "#000000",
+        light: "#ffffff",
+      },
+    }, (error, dataUrl) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(String(dataUrl || ""));
+    });
+  });
+}
+
+async function finalizeSetupProfile(profile) {
+  const finalizedProfile = {
+    ...profile,
+    ...buildDisplayStrings(profile),
+    qr_svg: normalizeQrSvg(profile.qr_svg),
+    qr_png: typeof profile.qr_png === "string" ? profile.qr_png : "",
+  };
+
+  if (!finalizedProfile.qr_svg) {
+    try {
+      finalizedProfile.qr_svg = await generateQrSvg(finalizedProfile.family_scan);
+    } catch {
+      finalizedProfile.qr_svg = "";
+    }
   }
+
+  if (!finalizedProfile.qr_png) {
+    try {
+      finalizedProfile.qr_png = await generateQrPng(finalizedProfile.family_scan);
+    } catch {
+      finalizedProfile.qr_png = "";
+    }
+  }
+
+  return finalizedProfile;
 }
 
 async function loadBranding(centreId) {
@@ -336,38 +614,41 @@ async function updateUi(profile) {
     opendoorLogoEl.src = fallbackBranding.opendoor_logo;
     familyNameEl.textContent = "Family";
     familyIdEl.textContent = "ID: --";
-    await renderQr("");
+    await renderQr(null);
     return;
   }
 
   const familyId = parseFamilyIdFromScan(profile.family_scan);
   const centreId = Number.parseInt(String(profile.centre_id), 10);
   const branding = await loadBranding(centreId);
-  const language = resolveProfileLanguage(profile);
-  const familyWord = FAMILY_WORD_BY_LANGUAGE[language] || FAMILY_WORD_BY_LANGUAGE[DEFAULT_PASS_LANGUAGE];
+  const displayStrings = buildDisplayStrings(profile);
+  const familyLine = displayStrings.family_line;
+  const idLine = displayStrings.id_line;
 
   centreLogoEl.src = branding.centre_logo;
   opendoorLogoEl.src = branding.opendoor_logo;
 
   if (!familyId) {
-    familyNameEl.textContent = familyWord;
-    familyIdEl.textContent = "ID: --";
-    await renderQr("");
+    familyNameEl.textContent = familyLine;
+    familyIdEl.textContent = idLine;
+    await renderQr(profile);
     return;
   }
 
-  familyNameEl.textContent = `${familyId} ${familyWord}`;
-  familyIdEl.textContent = `ID: ${familyId}`;
-  await renderQr(profile.family_scan);
+  familyNameEl.textContent = familyLine;
+  familyIdEl.textContent = idLine;
+  await renderQr(profile);
 }
 
 async function main() {
+  await updateInstallManifestForCurrentPage();
   initializeInstallPrompt();
 
   const setupProfile = parseSetupFromUrl();
   if (setupProfile) {
-    saveProfile(setupProfile);
-    await updateUi(setupProfile);
+    const finalizedProfile = await finalizeSetupProfile(setupProfile);
+    saveProfile(finalizedProfile);
+    await updateUi(finalizedProfile);
   } else {
     await updateUi(loadProfile());
   }
@@ -382,4 +663,3 @@ async function main() {
 }
 
 main();
-
