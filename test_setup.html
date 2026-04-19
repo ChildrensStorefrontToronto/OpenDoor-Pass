@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f4c81">
+  <title>OpenDoor Pass Experimental Test Setup QR</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --ink: #10253a;
+      --muted: #496783;
+      --line: #c8d8ea;
+      --accent: #0f4c81;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    main {
+      width: min(820px, 100%);
+      margin: 0 auto;
+      padding: 2rem 1rem 2.5rem;
+    }
+
+    h1 {
+      margin: 0 0 0.75rem;
+      font-size: clamp(1.6rem, 4vw, 2.3rem);
+    }
+
+    p {
+      line-height: 1.45;
+    }
+
+    .qr-block {
+      width: fit-content;
+      margin: 1.4rem auto;
+      padding: 0.75rem;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #ffffff;
+    }
+
+    #setup-qr {
+      display: block;
+      background: #ffffff;
+    }
+
+    .test-url {
+      margin: 1rem 0 0;
+      padding: 0.9rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #f8fbfe;
+      font-size: 0.95rem;
+      overflow-wrap: anywhere;
+    }
+
+    .label {
+      margin: 1.2rem 0 0.35rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .status-box {
+      margin: 1rem 0 0;
+      padding: 0.9rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #f8fbfe;
+      color: var(--ink);
+      font-size: 0.95rem;
+      overflow-wrap: anywhere;
+    }
+
+    .note {
+      color: var(--muted);
+    }
+
+    .copy-button {
+      margin-top: 0.9rem;
+      padding: 0.7rem 1rem;
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>OpenDoor Pass Experimental Setup QR</h1>
+    <p>This version tests the bundled local QR library. The setup URL only carries family data; the pass page should generate and save fixed SVG and PNG QR assets on the phone during setup.</p>
+
+    <div class="qr-block">
+      <canvas id="setup-qr" width="320" height="320" aria-label="Experimental setup QR code"></canvas>
+    </div>
+
+    <button id="copy-url" type="button" class="copy-button">Copy test URL</button>
+
+    <p class="label">Test URL</p>
+    <p id="test-url" class="test-url"></p>
+
+    <p class="label">Status</p>
+    <p id="status-box" class="status-box">Waiting to build setup QR.</p>
+
+    <p class="note">Expected result: scan the QR, open the pass, then install it. Later launches should show the saved QR even if the page does not regenerate it.</p>
+  </main>
+
+  <script src="./assets/vendor/qrcode.js"></script>
+  <script>
+    const DEPLOY_BASE_URL = "https://childrensstorefronttoronto.github.io/OpenDoor-Pass/";
+
+    const urlEl = document.getElementById("test-url");
+    const statusEl = document.getElementById("status-box");
+    const canvas = document.getElementById("setup-qr");
+    const copyButton = document.getElementById("copy-url");
+
+    function resolveTestUrl() {
+      return new URL("./?v=1&centre_id=1&lang=en-CA&default_lang=en-CA&family_scan=F%7C123%7CdemoKey123", DEPLOY_BASE_URL).toString();
+    }
+
+    function drawPlaceholder(message) {
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#f8fbfe";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#496783";
+      ctx.font = "16px Segoe UI";
+      ctx.textAlign = "center";
+      ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+    }
+
+    function renderSetupQr(text) {
+      return new Promise((resolve, reject) => {
+        if (!window.QRCode || typeof window.QRCode.toCanvas !== "function") {
+          reject(new Error("local_qr_library_unavailable"));
+          return;
+        }
+
+        window.QRCode.toCanvas(canvas, text, {
+          margin: 1,
+          width: canvas.width,
+          errorCorrectionLevel: "M",
+          color: {
+            dark: "#000000",
+            light: "#ffffff",
+          },
+        }, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
+    }
+
+    async function main() {
+      drawPlaceholder("Building setup QR...");
+      statusEl.textContent = "Rendering setup QR with bundled local library.";
+
+      try {
+        const testUrl = resolveTestUrl();
+        urlEl.textContent = testUrl;
+        await renderSetupQr(testUrl);
+        statusEl.textContent = "Setup QR ready.";
+      } catch (error) {
+        drawPlaceholder("QR unavailable");
+        statusEl.textContent = "Failed: " + (error && error.message ? error.message : String(error));
+        urlEl.textContent = "Unavailable";
+      }
+    }
+
+    copyButton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(resolveTestUrl());
+        copyButton.textContent = "Copied";
+      } catch {
+        copyButton.textContent = "Copy failed";
+      }
+    });
+
+    main();
+  </script>
+</body>
+</html>

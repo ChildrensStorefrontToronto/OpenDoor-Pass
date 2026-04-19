@@ -30,6 +30,10 @@ const INSTALL_STATE = {
   ui: null,
 };
 
+const MANIFEST_STATE = {
+  objectUrl: null,
+};
+
 function detectBrowser() {
   const ua = navigator.userAgent || "";
 
@@ -64,6 +68,45 @@ function getInstallMessage() {
   }
 
   return "If install is available in this browser, use its Add to Home Screen or Install App option.";
+}
+
+async function updateInstallManifestForCurrentPage() {
+  const manifestLink = document.querySelector('link[rel="manifest"]');
+  if (!manifestLink) {
+    return;
+  }
+
+  const manifestUrl = new URL(manifestLink.href, window.location.href);
+
+  try {
+    const response = await fetch(manifestUrl.href, { cache: "no-cache" });
+    if (!response.ok) {
+      return;
+    }
+
+    const manifest = await response.json();
+    manifest.start_url = window.location.href;
+    manifest.scope = new URL("./", window.location.href).href;
+
+    if (Array.isArray(manifest.icons)) {
+      manifest.icons = manifest.icons.map((icon) => ({
+        ...icon,
+        src: new URL(icon.src, manifestUrl.href).href,
+      }));
+    }
+
+    if (MANIFEST_STATE.objectUrl) {
+      URL.revokeObjectURL(MANIFEST_STATE.objectUrl);
+    }
+
+    MANIFEST_STATE.objectUrl = URL.createObjectURL(
+      new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" })
+    );
+
+    manifestLink.href = MANIFEST_STATE.objectUrl;
+  } catch {
+    // If manifest rewriting fails, leave the static manifest in place.
+  }
 }
 
 function ensureInstallUi() {
@@ -177,6 +220,19 @@ function parseFamilyIdFromScan(scanText) {
   return Number.isInteger(familyId) && familyId > 0 ? familyId : null;
 }
 
+function normalizeQrSvg(svgMarkup) {
+  if (!svgMarkup || typeof svgMarkup !== "string") {
+    return "";
+  }
+
+  const trimmed = svgMarkup.trim();
+  if (!trimmed.includes("<svg") || !trimmed.includes("</svg>")) {
+    return "";
+  }
+
+  return trimmed;
+}
+
 function normalizeLanguage(language, fallbackLanguage = DEFAULT_PASS_LANGUAGE) {
   const fallback = SUPPORTED_LANGUAGES.includes(fallbackLanguage)
     ? fallbackLanguage
@@ -194,6 +250,24 @@ function resolveProfileLanguage(profile) {
   return normalizeLanguage(profile?.lang, defaultLanguage);
 }
 
+function buildDisplayStrings(profile) {
+  const familyId = parseFamilyIdFromScan(profile?.family_scan || "");
+  const language = resolveProfileLanguage(profile);
+  const familyWord = FAMILY_WORD_BY_LANGUAGE[language] || FAMILY_WORD_BY_LANGUAGE[DEFAULT_PASS_LANGUAGE];
+
+  if (!familyId) {
+    return {
+      family_line: familyWord,
+      id_line: "ID: --",
+    };
+  }
+
+  return {
+    family_line: `${familyId} ${familyWord}`,
+    id_line: `ID: ${familyId}`,
+  };
+}
+
 function parseSetupFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const version = params.get("v");
@@ -201,6 +275,7 @@ function parseSetupFromUrl() {
   const familyScan = params.get("family_scan");
   const language = params.get("lang");
   const defaultLanguage = params.get("default_lang");
+  const qrSvg = normalizeQrSvg(params.get("qr_svg"));
 
   if (!version || !centreId || !familyScan) {
     return null;
@@ -220,6 +295,10 @@ function parseSetupFromUrl() {
     v: version,
     centre_id: centreIdInt,
     family_scan: familyScan,
+    qr_svg: qrSvg,
+    qr_png: "",
+    family_line: "",
+    id_line: "",
     lang: language || "",
     default_lang: defaultLanguage || "",
     updated_at: new Date().toISOString(),
@@ -232,6 +311,10 @@ function loadProfile() {
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || !data.family_scan || !data.centre_id) return null;
+    data.qr_svg = normalizeQrSvg(data.qr_svg);
+    data.qr_png = typeof data.qr_png === "string" ? data.qr_png : "";
+    data.family_line = typeof data.family_line === "string" ? data.family_line : "";
+    data.id_line = typeof data.id_line === "string" ? data.id_line : "";
     return data;
   } catch {
     return null;
@@ -249,11 +332,17 @@ function drawQrPlaceholder(canvas, message) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#47627c";
   ctx.font = "16px Segoe UI";
-  ctx.fillText(message, 84, 145);
+  ctx.textAlign = "center";
+  ctx.fillText(message, canvas.width / 2, canvas.height / 2);
 }
 
-function renderQrFromRemoteImage(canvas, text) {
+function renderQrFromDataUrl(canvas, dataUrl) {
   return new Promise((resolve, reject) => {
+    if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
+      reject(new Error("invalid_data_url"));
+      return;
+    }
+
     const img = new Image();
     img.onload = () => {
       const ctx = canvas.getContext("2d");
@@ -261,23 +350,71 @@ function renderQrFromRemoteImage(canvas, text) {
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       resolve();
     };
-    img.onerror = () => reject(new Error("remote_qr_failed"));
-    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=${canvas.width}x${canvas.height}&data=${encodeURIComponent(text)}`;
+    img.onerror = () => reject(new Error("png_render_failed"));
+    img.src = dataUrl;
   });
 }
 
-async function renderQr(text) {
+function renderQrFromSvg(canvas, svgMarkup) {
+  return new Promise((resolve, reject) => {
+    const normalizedSvg = normalizeQrSvg(svgMarkup);
+    if (!normalizedSvg) {
+      reject(new Error("invalid_svg"));
+      return;
+    }
+
+    const blob = new Blob([normalizedSvg], { type: "image/svg+xml" });
+    const objectUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(objectUrl);
+      resolve();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("svg_render_failed"));
+    };
+    img.src = objectUrl;
+  });
+}
+
+async function renderQr(profile) {
   const canvas = document.getElementById("pass-qr");
   if (!canvas) return;
 
-  if (!text) {
+  const qrText = profile?.family_scan || "";
+  const qrSvg = normalizeQrSvg(profile?.qr_svg);
+  const qrPng = typeof profile?.qr_png === "string" ? profile.qr_png : "";
+
+  if (qrSvg) {
+    try {
+      await renderQrFromSvg(canvas, qrSvg);
+      return;
+    } catch {
+      // Fall through to text-based QR rendering if available.
+    }
+  }
+
+  if (qrPng) {
+    try {
+      await renderQrFromDataUrl(canvas, qrPng);
+      return;
+    } catch {
+      // Fall through to text-based QR rendering if available.
+    }
+  }
+
+  if (!qrText) {
     drawQrPlaceholder(canvas, "No pass loaded");
     return;
   }
 
   if (window.QRCode && window.QRCode.toCanvas) {
     try {
-      await window.QRCode.toCanvas(canvas, text, {
+      await window.QRCode.toCanvas(canvas, qrText, {
         margin: 1,
         width: canvas.width,
         color: {
@@ -287,15 +424,101 @@ async function renderQr(text) {
       });
       return;
     } catch {
-      // Fall through to remote image fallback.
+      // Fall through to placeholder.
     }
   }
 
-  try {
-    await renderQrFromRemoteImage(canvas, text);
-  } catch {
-    drawQrPlaceholder(canvas, "QR unavailable");
+  drawQrPlaceholder(canvas, "QR unavailable");
+}
+
+function generateQrSvg(text) {
+  return new Promise((resolve, reject) => {
+    if (!window.QRCode || typeof window.QRCode.toString !== "function") {
+      reject(new Error("qr_svg_generation_unavailable"));
+      return;
+    }
+
+    window.QRCode.toString(text, {
+      type: "svg",
+      errorCorrectionLevel: "M",
+      margin: 1,
+      color: {
+        dark: "#000000",
+        light: "#ffffff",
+      },
+    }, (error, svgText) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      const normalizedSvg = normalizeQrSvg(String(svgText || "")
+        .replace(/\r?\n/g, "")
+        .replace(/>\s+</g, "><")
+        .replace(/\s{2,}/g, " ")
+        .trim());
+
+      if (!normalizedSvg) {
+        reject(new Error("svg_output_invalid"));
+        return;
+      }
+
+      resolve(normalizedSvg);
+    });
+  });
+}
+
+function generateQrPng(text) {
+  return new Promise((resolve, reject) => {
+    if (!window.QRCode || typeof window.QRCode.toDataURL !== "function") {
+      reject(new Error("qr_png_generation_unavailable"));
+      return;
+    }
+
+    window.QRCode.toDataURL(text, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 280,
+      color: {
+        dark: "#000000",
+        light: "#ffffff",
+      },
+    }, (error, dataUrl) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(String(dataUrl || ""));
+    });
+  });
+}
+
+async function finalizeSetupProfile(profile) {
+  const finalizedProfile = {
+    ...profile,
+    ...buildDisplayStrings(profile),
+    qr_svg: normalizeQrSvg(profile.qr_svg),
+    qr_png: typeof profile.qr_png === "string" ? profile.qr_png : "",
+  };
+
+  if (!finalizedProfile.qr_svg) {
+    try {
+      finalizedProfile.qr_svg = await generateQrSvg(finalizedProfile.family_scan);
+    } catch {
+      finalizedProfile.qr_svg = "";
+    }
   }
+
+  if (!finalizedProfile.qr_png) {
+    try {
+      finalizedProfile.qr_png = await generateQrPng(finalizedProfile.family_scan);
+    } catch {
+      finalizedProfile.qr_png = "";
+    }
+  }
+
+  return finalizedProfile;
 }
 
 async function loadBranding(centreId) {
@@ -336,38 +559,41 @@ async function updateUi(profile) {
     opendoorLogoEl.src = fallbackBranding.opendoor_logo;
     familyNameEl.textContent = "Family";
     familyIdEl.textContent = "ID: --";
-    await renderQr("");
+    await renderQr(null);
     return;
   }
 
   const familyId = parseFamilyIdFromScan(profile.family_scan);
   const centreId = Number.parseInt(String(profile.centre_id), 10);
   const branding = await loadBranding(centreId);
-  const language = resolveProfileLanguage(profile);
-  const familyWord = FAMILY_WORD_BY_LANGUAGE[language] || FAMILY_WORD_BY_LANGUAGE[DEFAULT_PASS_LANGUAGE];
+  const displayStrings = buildDisplayStrings(profile);
+  const familyLine = profile.family_line || displayStrings.family_line;
+  const idLine = profile.id_line || displayStrings.id_line;
 
   centreLogoEl.src = branding.centre_logo;
   opendoorLogoEl.src = branding.opendoor_logo;
 
   if (!familyId) {
-    familyNameEl.textContent = familyWord;
-    familyIdEl.textContent = "ID: --";
-    await renderQr("");
+    familyNameEl.textContent = familyLine;
+    familyIdEl.textContent = idLine;
+    await renderQr(profile);
     return;
   }
 
-  familyNameEl.textContent = `${familyId} ${familyWord}`;
-  familyIdEl.textContent = `ID: ${familyId}`;
-  await renderQr(profile.family_scan);
+  familyNameEl.textContent = familyLine;
+  familyIdEl.textContent = idLine;
+  await renderQr(profile);
 }
 
 async function main() {
+  await updateInstallManifestForCurrentPage();
   initializeInstallPrompt();
 
   const setupProfile = parseSetupFromUrl();
   if (setupProfile) {
-    saveProfile(setupProfile);
-    await updateUi(setupProfile);
+    const finalizedProfile = await finalizeSetupProfile(setupProfile);
+    saveProfile(finalizedProfile);
+    await updateUi(finalizedProfile);
   } else {
     await updateUi(loadProfile());
   }

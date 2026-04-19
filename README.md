@@ -13,7 +13,8 @@ OpenDoor Pass is the companion PWA for OpenDoor kiosk logins.
    - `v`
    - `centre_id`
    - `family_scan` (the kiosk token, for example `F|123|...`)
-4. Pass displays the family QR for kiosk scanning.
+4. On first setup, Pass generates and saves fixed QR assets (`qr_svg` and `qr_png`) plus fixed display strings.
+5. Later launches display those saved assets rather than depending on live QR regeneration.
 
 ## Local Development
 This scaffold is static and can be served by any static server.
@@ -26,7 +27,8 @@ Then open `http://localhost:8080`.
 
 ## Notes
 - Data is stored in localStorage on-device.
-- This scaffold uses client-side QR generation via `qrcode` browser library.
+- `pass_experimental` vendors the browser QR library locally under `assets/vendor/qrcode.js` instead of loading it from a CDN.
+- The experimental setup flow generates the QR once, saves both SVG and PNG forms, and then prefers those saved assets for later display.
 - Production hardening (pinning assets, CSP, tests, analytics, legal text) is still needed.
 
 ## Centre Branding
