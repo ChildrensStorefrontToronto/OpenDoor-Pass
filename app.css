@@ -95,6 +95,61 @@ body {
   color: var(--muted);
 }
 
+.share-panel {
+  width: min(420px, 92%);
+  margin: 0 0 1rem;
+  text-align: center;
+}
+
+.share-button {
+  padding: 0.68rem 1rem;
+  min-width: 180px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f4c81;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.share-button:hover {
+  border-color: #0f4c81;
+  background: #f8fbfe;
+}
+
+.share-details {
+  margin-top: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fbfe;
+}
+
+.share-heading {
+  margin: 0 0 0.45rem;
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
+.share-message {
+  margin: 0 0 0.75rem;
+  font-size: 0.94rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.share-qr {
+  display: block;
+  width: 220px;
+  height: 220px;
+  margin: 0 auto;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.35rem;
+}
+
 .opendoor-logo {
   width: min(260px, 60%);
   height: auto;

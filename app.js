@@ -5,6 +5,24 @@ const FAMILY_WORD_BY_LANGUAGE = {
   "en-CA": "Family",
   "fr-CA": "Famille",
 };
+const SHARE_MESSAGES_BY_LANGUAGE = {
+  "en-CA": {
+    button_show: "Share this pass",
+    button_hide: "Hide sharing code",
+    heading: "Set up another phone",
+    body: "Ask another caregiver to scan this code to save their own OpenDoor Pass for this family.",
+    qr_label: "QR code to set up OpenDoor Pass on another phone",
+    unavailable: "OpenDoor Pass must be set up on this phone before it can be shared.",
+  },
+  "fr-CA": {
+    button_show: "Partager cette passe",
+    button_hide: "Masquer le code de partage",
+    heading: "Configurer un autre telephone",
+    body: "Demandez a une autre personne responsable de scanner ce code pour enregistrer sa propre passe OpenDoor pour cette famille.",
+    qr_label: "Code QR pour configurer OpenDoor Pass sur un autre telephone",
+    unavailable: "OpenDoor Pass doit etre configure sur ce telephone avant de pouvoir etre partage.",
+  },
+};
 
 const HTML_ROOT = document.documentElement;
 const APP_BASE = HTML_ROOT.dataset.appBase || ".";
@@ -34,6 +52,11 @@ const MANIFEST_STATE = {
   objectUrl: null,
 };
 
+const SHARE_STATE = {
+  profile: null,
+  ui: null,
+};
+
 function getInstallMessages(language) {
   const allMessages = window.OPENDOOR_INSTALL_MESSAGES || {};
   const normalizedLanguage = normalizeLanguage(language, DEFAULT_PASS_LANGUAGE);
@@ -46,6 +69,11 @@ function getInstallMessages(language) {
     safari_ios: "Install this pass as an app on your phone!  Go to 'Share' (you might have to search for it a bit), then 'Add to Home Screen'. The pass will show up as a little app on your home screen.",
     chromium_mobile: "Install this pass as an app on your phone!  You might get a handy pop-up to help you.  If it doesn't work, go to the menu ( ⋮ ), tap 'Add to home screen' (you might have to scroll down a bit). A couple of options should pop up -- you want 'Install'.",
   };
+}
+
+function getShareMessages(language) {
+  const normalizedLanguage = normalizeLanguage(language, DEFAULT_PASS_LANGUAGE);
+  return SHARE_MESSAGES_BY_LANGUAGE[normalizedLanguage] || SHARE_MESSAGES_BY_LANGUAGE[DEFAULT_PASS_LANGUAGE];
 }
 
 function detectBrowser() {
@@ -320,6 +348,26 @@ function buildDisplayStrings(profile) {
   };
 }
 
+function buildSetupUrl(profile) {
+  if (!profile?.centre_id || !profile?.family_scan) {
+    return "";
+  }
+
+  const setupUrl = new URL(window.location.href);
+  setupUrl.hash = "";
+  setupUrl.search = "";
+
+  const params = new URLSearchParams();
+  params.set("v", String(profile.v || "1"));
+  params.set("centre_id", String(profile.centre_id));
+  params.set("family_scan", profile.family_scan);
+  params.set("family_name", profile.family_name || "");
+  params.set("lang", resolveProfileLanguage(profile));
+  params.set("default_lang", normalizeLanguage(profile.default_lang, DEFAULT_PASS_LANGUAGE));
+  setupUrl.search = params.toString();
+  return setupUrl.href;
+}
+
 function parseSetupFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const version = params.get("v");
@@ -486,6 +534,29 @@ async function renderQr(profile) {
   drawQrPlaceholder(canvas, "QR unavailable");
 }
 
+async function renderShareQr(setupUrl) {
+  const canvas = document.getElementById("share-setup-qr");
+  if (!canvas) return;
+
+  if (!setupUrl || !window.QRCode || typeof window.QRCode.toCanvas !== "function") {
+    drawQrPlaceholder(canvas, "QR unavailable");
+    return;
+  }
+
+  try {
+    await window.QRCode.toCanvas(canvas, setupUrl, {
+      margin: 1,
+      width: canvas.width,
+      color: {
+        dark: "#0f4c81",
+        light: "#ffffff",
+      },
+    });
+  } catch {
+    drawQrPlaceholder(canvas, "QR unavailable");
+  }
+}
+
 function generateQrSvg(text) {
   return new Promise((resolve, reject) => {
     if (!window.QRCode || typeof window.QRCode.toString !== "function") {
@@ -615,6 +686,7 @@ async function updateUi(profile) {
     familyNameEl.textContent = "Family";
     familyIdEl.textContent = "ID: --";
     await renderQr(null);
+    renderShareUi(null);
     return;
   }
 
@@ -638,6 +710,86 @@ async function updateUi(profile) {
   familyNameEl.textContent = familyLine;
   familyIdEl.textContent = idLine;
   await renderQr(profile);
+  renderShareUi(profile);
+}
+
+function ensureShareUi() {
+  if (SHARE_STATE.ui) {
+    return SHARE_STATE.ui;
+  }
+
+  const shell = document.querySelector(".shell");
+  const opendoorLogo = document.querySelector(".opendoor-logo");
+  if (!shell || !opendoorLogo) {
+    return null;
+  }
+
+  const wrap = document.createElement("section");
+  wrap.className = "share-panel";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "share-button";
+
+  const details = document.createElement("div");
+  details.className = "share-details";
+  details.hidden = true;
+
+  const heading = document.createElement("p");
+  heading.className = "share-heading";
+
+  const body = document.createElement("p");
+  body.className = "share-message";
+
+  const canvas = document.createElement("canvas");
+  canvas.id = "share-setup-qr";
+  canvas.className = "share-qr";
+  canvas.width = 220;
+  canvas.height = 220;
+
+  details.append(heading, body, canvas);
+  wrap.append(button, details);
+  shell.insertBefore(wrap, opendoorLogo);
+
+  button.addEventListener("click", async () => {
+    const profile = SHARE_STATE.profile;
+    const messages = getShareMessages(resolveProfileLanguage(profile));
+    const setupUrl = buildSetupUrl(profile);
+
+    if (!setupUrl) {
+      details.hidden = false;
+      heading.textContent = messages.heading;
+      body.textContent = messages.unavailable;
+      drawQrPlaceholder(canvas, "No pass loaded");
+      return;
+    }
+
+    const shouldShow = details.hidden;
+    details.hidden = !shouldShow;
+    button.textContent = shouldShow ? messages.button_hide : messages.button_show;
+    if (shouldShow) {
+      await renderShareQr(setupUrl);
+    }
+  });
+
+  SHARE_STATE.ui = { wrap, button, details, heading, body, canvas };
+  return SHARE_STATE.ui;
+}
+
+function renderShareUi(profile) {
+  const ui = ensureShareUi();
+  if (!ui) {
+    return;
+  }
+
+  SHARE_STATE.profile = profile;
+  const messages = getShareMessages(resolveProfileLanguage(profile));
+  ui.button.textContent = messages.button_show;
+  ui.heading.textContent = messages.heading;
+  ui.body.textContent = buildSetupUrl(profile) ? messages.body : messages.unavailable;
+  ui.canvas.setAttribute("aria-label", messages.qr_label);
+  ui.details.hidden = true;
+  ui.wrap.hidden = false;
 }
 
 async function main() {
