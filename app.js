@@ -374,16 +374,46 @@ function buildSetupUrl(profile) {
   return setupUrl.href;
 }
 
-function parseSetupFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  const version = params.get("v");
-  const centreId = params.get("centre_id");
-  const familyScan = params.get("family_scan");
-  const familyName = params.get("family_name");
-  const language = params.get("lang");
-  const defaultLanguage = params.get("default_lang");
-  const qrSvg = normalizeQrSvg(params.get("qr_svg"));
+function encodeProfileForHash(profile) {
+  const profileJson = JSON.stringify({
+    v: String(profile.v || "1"),
+    centre_id: Number.parseInt(String(profile.centre_id), 10),
+    family_scan: profile.family_scan || "",
+    family_name: profile.family_name || "",
+    lang: resolveProfileLanguage(profile),
+    default_lang: normalizeLanguage(profile.default_lang, DEFAULT_PASS_LANGUAGE),
+  });
 
+  return btoa(encodeURIComponent(profileJson))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function decodeProfileFromHashPayload(payload) {
+  if (!payload || typeof payload !== "string") {
+    return null;
+  }
+
+  try {
+    const paddedPayload = payload.replace(/-/g, "+").replace(/_/g, "/")
+      + "=".repeat((4 - payload.length % 4) % 4);
+    const decodedJson = decodeURIComponent(atob(paddedPayload));
+    return JSON.parse(decodedJson);
+  } catch {
+    return null;
+  }
+}
+
+function buildProfileFromSetupFields({
+  version,
+  centreId,
+  familyScan,
+  familyName,
+  language,
+  defaultLanguage,
+  qrSvg = "",
+}) {
   if (!version || !centreId || !familyScan) {
     return null;
   }
@@ -411,6 +441,57 @@ function parseSetupFromUrl() {
     default_lang: defaultLanguage || "",
     updated_at: new Date().toISOString(),
   };
+}
+
+function parseSetupFromHash() {
+  const match = window.location.hash.match(/^#pass=([A-Za-z0-9_-]+)$/);
+  if (!match) {
+    return null;
+  }
+
+  const data = decodeProfileFromHashPayload(match[1]);
+  if (!data) {
+    return null;
+  }
+
+  return buildProfileFromSetupFields({
+    version: data.v,
+    centreId: data.centre_id,
+    familyScan: data.family_scan,
+    familyName: data.family_name,
+    language: data.lang,
+    defaultLanguage: data.default_lang,
+  });
+}
+
+function parseSetupFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const setupProfile = buildProfileFromSetupFields({
+    version: params.get("v"),
+    centreId: params.get("centre_id"),
+    familyScan: params.get("family_scan"),
+    familyName: params.get("family_name"),
+    language: params.get("lang"),
+    defaultLanguage: params.get("default_lang"),
+    qrSvg: normalizeQrSvg(params.get("qr_svg")),
+  });
+
+  return setupProfile || parseSetupFromHash();
+}
+
+function replaceSetupUrlWithHashPermalink(profile) {
+  if (!profile?.centre_id || !profile?.family_scan || !window.history?.replaceState) {
+    return;
+  }
+
+  try {
+    const permalinkUrl = new URL(window.location.href);
+    permalinkUrl.search = "";
+    permalinkUrl.hash = `pass=${encodeProfileForHash(profile)}`;
+    window.history.replaceState(null, "", permalinkUrl.href);
+  } catch {
+    // If URL rewriting fails, the visible setup URL still works in Safari.
+  }
 }
 
 function loadProfile() {
@@ -936,6 +1017,7 @@ async function main() {
   if (setupProfile) {
     const finalizedProfile = await finalizeSetupProfile(setupProfile);
     saveProfile(finalizedProfile);
+    replaceSetupUrlWithHashPermalink(finalizedProfile);
     await updateUi(finalizedProfile);
   } else {
     await updateUi(loadProfile());

@@ -1,4 +1,4 @@
-const CACHE_NAME = "opendoor-pass-v5";
+const CACHE_NAME = "opendoor-pass-v6";
 const CORE_ASSETS = [
   "./",
   "./index.html",
