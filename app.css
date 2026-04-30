@@ -41,6 +41,13 @@ body {
   padding: 0.45rem;
 }
 
+.pass-qr-image {
+  display: block;
+  width: 280px;
+  height: 280px;
+  background: #ffffff;
+}
+
 .family-line {
   margin: 0.85rem 0 0;
   font-size: clamp(1.25rem, 2.7vw, 1.9rem);
@@ -150,6 +157,17 @@ body {
   padding: 0.35rem;
 }
 
+.share-qr-image {
+  display: block;
+  width: 220px;
+  height: 220px;
+  margin: 0 auto;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.35rem;
+}
+
 .opendoor-logo {
   width: min(260px, 60%);
   height: auto;
@@ -157,7 +175,8 @@ body {
 }
 
 @media (max-width: 640px) {
-  #pass-qr {
+  #pass-qr,
+  .pass-qr-image {
     width: 240px;
     height: 240px;
   }

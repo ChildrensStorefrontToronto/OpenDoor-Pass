@@ -429,6 +429,12 @@ function saveProfile(profile) {
 }
 
 function drawQrPlaceholder(canvas, message) {
+  const adjacentImage = canvas.nextElementSibling;
+  if (adjacentImage?.tagName === "IMG") {
+    adjacentImage.hidden = true;
+  }
+  canvas.hidden = false;
+
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#f0f4f8";
@@ -437,6 +443,58 @@ function drawQrPlaceholder(canvas, message) {
   ctx.font = "16px Segoe UI";
   ctx.textAlign = "center";
   ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+}
+
+function ensurePassQrImage(canvas) {
+  let image = document.getElementById("pass-qr-image");
+  if (image) {
+    return image;
+  }
+
+  image = document.createElement("img");
+  image.id = "pass-qr-image";
+  image.className = "pass-qr-image";
+  image.alt = canvas.getAttribute("aria-label") || "Family login QR code";
+  image.hidden = true;
+  canvas.insertAdjacentElement("afterend", image);
+  return image;
+}
+
+function hidePassQrImage(canvas) {
+  const image = document.getElementById("pass-qr-image");
+  if (image) {
+    image.hidden = true;
+  }
+  canvas.hidden = false;
+}
+
+function renderQrImageFromDataUrl(canvas, dataUrl) {
+  return new Promise((resolve, reject) => {
+    if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
+      reject(new Error("invalid_data_url"));
+      return;
+    }
+
+    const image = ensurePassQrImage(canvas);
+    if (image.src === dataUrl && image.complete && image.naturalWidth > 0) {
+      canvas.hidden = true;
+      image.hidden = false;
+      resolve();
+      return;
+    }
+
+    image.onload = () => {
+      canvas.hidden = true;
+      image.hidden = false;
+      resolve();
+    };
+    image.onerror = () => {
+      image.hidden = true;
+      canvas.hidden = false;
+      reject(new Error("image_render_failed"));
+    };
+    image.src = dataUrl;
+  });
 }
 
 function renderQrFromDataUrl(canvas, dataUrl) {
@@ -491,19 +549,34 @@ async function renderQr(profile) {
   const qrText = profile?.family_scan || "";
   const qrSvg = normalizeQrSvg(profile?.qr_svg);
   const qrPng = typeof profile?.qr_png === "string" ? profile.qr_png : "";
+  hidePassQrImage(canvas);
 
-  if (qrSvg) {
+  if (qrPng) {
     try {
-      await renderQrFromSvg(canvas, qrSvg);
+      await renderQrImageFromDataUrl(canvas, qrPng);
       return;
     } catch {
       // Fall through to text-based QR rendering if available.
     }
   }
 
-  if (qrPng) {
+  if (qrText && window.QRCode && typeof window.QRCode.toDataURL === "function") {
     try {
-      await renderQrFromDataUrl(canvas, qrPng);
+      const generatedPng = await generateQrPng(qrText);
+      await renderQrImageFromDataUrl(canvas, generatedPng);
+      if (profile && !profile.qr_png) {
+        profile.qr_png = generatedPng;
+        saveProfile(profile);
+      }
+      return;
+    } catch {
+      // Fall through to canvas/SVG rendering if needed.
+    }
+  }
+
+  if (qrSvg) {
+    try {
+      await renderQrFromSvg(canvas, qrSvg);
       return;
     } catch {
       // Fall through to text-based QR rendering if available.
@@ -538,7 +611,64 @@ async function renderShareQr(setupUrl) {
   const canvas = document.getElementById("share-setup-qr");
   if (!canvas) return;
 
-  if (!setupUrl || !window.QRCode || typeof window.QRCode.toCanvas !== "function") {
+  let image = document.getElementById("share-setup-qr-image");
+  if (image) {
+    image.hidden = true;
+  }
+  canvas.hidden = false;
+
+  if (!setupUrl || !window.QRCode) {
+    drawQrPlaceholder(canvas, "QR unavailable");
+    return;
+  }
+
+  if (typeof window.QRCode.toDataURL === "function") {
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        window.QRCode.toDataURL(setupUrl, {
+          errorCorrectionLevel: "M",
+          margin: 1,
+          width: 220,
+          color: {
+            dark: "#0f4c81",
+            light: "#ffffff",
+          },
+        }, (error, renderedDataUrl) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve(String(renderedDataUrl || ""));
+        });
+      });
+
+      if (!image) {
+        image = document.createElement("img");
+        image.id = "share-setup-qr-image";
+        image.className = "share-qr-image";
+        image.alt = canvas.getAttribute("aria-label") || "QR code to set up OpenDoor Pass";
+        canvas.insertAdjacentElement("afterend", image);
+      }
+
+      await new Promise((resolve, reject) => {
+        if (image.src === dataUrl && image.complete && image.naturalWidth > 0) {
+          resolve();
+          return;
+        }
+
+        image.onload = resolve;
+        image.onerror = reject;
+        image.src = dataUrl;
+      });
+      canvas.hidden = true;
+      image.hidden = false;
+      return;
+    } catch {
+      // Fall through to canvas rendering.
+    }
+  }
+
+  if (typeof window.QRCode.toCanvas !== "function") {
     drawQrPlaceholder(canvas, "QR unavailable");
     return;
   }
