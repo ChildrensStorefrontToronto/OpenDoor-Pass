@@ -133,6 +133,12 @@ async function updateInstallManifestForCurrentPage() {
     return;
   }
 
+  const browser = detectBrowser();
+  if (browser.isIOS) {
+    manifestLink.remove();
+    return;
+  }
+
   const manifestUrl = new URL(manifestLink.href, window.location.href);
 
   try {
