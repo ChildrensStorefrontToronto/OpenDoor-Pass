@@ -28,6 +28,7 @@ const HTML_ROOT = document.documentElement;
 const APP_BASE = HTML_ROOT.dataset.appBase || ".";
 const BRANDING_BASE = HTML_ROOT.dataset.brandingBase || "./branding";
 const FORCED_CENTRE_ID = Number.parseInt(HTML_ROOT.dataset.centreId || "", 10);
+const IS_IOS_INSTALL_PAGE = HTML_ROOT.dataset.iosInstallPage === "true";
 
 function resolveAppUrl(relativePath) {
   return new URL(relativePath, new URL(APP_BASE + "/", window.location.href)).href;
@@ -390,7 +391,7 @@ function encodeProfileForHash(profile) {
     .replace(/=+$/g, "");
 }
 
-function decodeProfileFromHashPayload(payload) {
+function decodeProfilePayload(payload) {
   if (!payload || typeof payload !== "string") {
     return null;
   }
@@ -449,7 +450,23 @@ function parseSetupFromHash() {
     return null;
   }
 
-  const data = decodeProfileFromHashPayload(match[1]);
+  const data = decodeProfilePayload(match[1]);
+  if (!data) {
+    return null;
+  }
+
+  return buildProfileFromSetupFields({
+    version: data.v,
+    centreId: data.centre_id,
+    familyScan: data.family_scan,
+    familyName: data.family_name,
+    language: data.lang,
+    defaultLanguage: data.default_lang,
+  });
+}
+
+function parseSetupFromPassParam(params) {
+  const data = decodeProfilePayload(params.get("pass"));
   if (!data) {
     return null;
   }
@@ -476,18 +493,49 @@ function parseSetupFromUrl() {
     qrSvg: normalizeQrSvg(params.get("qr_svg")),
   });
 
-  return setupProfile || parseSetupFromHash();
+  return setupProfile || parseSetupFromPassParam(params) || parseSetupFromHash();
 }
 
-function replaceSetupUrlWithHashPermalink(profile) {
+function buildIosInstallUrl(profile) {
+  const installUrl = new URL("./pass.html", window.location.href);
+  installUrl.search = `pass=${encodeProfileForHash(profile)}`;
+  installUrl.hash = "";
+  return installUrl.href;
+}
+
+function redirectIosSetupToInstallPage(profile) {
+  if (
+    IS_IOS_INSTALL_PAGE
+    || isStandaloneMode()
+    || !detectBrowser().isIOS
+    || !window.location.search.includes("family_scan=")
+  ) {
+    return false;
+  }
+
+  try {
+    window.location.replace(buildIosInstallUrl(profile));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function replaceSetupUrlWithPermalink(profile) {
   if (!profile?.centre_id || !profile?.family_scan || !window.history?.replaceState) {
     return;
   }
 
   try {
-    const permalinkUrl = new URL(window.location.href);
-    permalinkUrl.search = "";
-    permalinkUrl.hash = `pass=${encodeProfileForHash(profile)}`;
+    const permalinkUrl = IS_IOS_INSTALL_PAGE
+      ? new URL(buildIosInstallUrl(profile))
+      : new URL(window.location.href);
+
+    if (!IS_IOS_INSTALL_PAGE) {
+      permalinkUrl.search = "";
+      permalinkUrl.hash = `pass=${encodeProfileForHash(profile)}`;
+    }
+
     window.history.replaceState(null, "", permalinkUrl.href);
   } catch {
     // If URL rewriting fails, the visible setup URL still works in Safari.
@@ -1017,7 +1065,10 @@ async function main() {
   if (setupProfile) {
     const finalizedProfile = await finalizeSetupProfile(setupProfile);
     saveProfile(finalizedProfile);
-    replaceSetupUrlWithHashPermalink(finalizedProfile);
+    if (redirectIosSetupToInstallPage(finalizedProfile)) {
+      return;
+    }
+    replaceSetupUrlWithPermalink(finalizedProfile);
     await updateUi(finalizedProfile);
   } else {
     await updateUi(loadProfile());
