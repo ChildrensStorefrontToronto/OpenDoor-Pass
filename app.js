@@ -7,16 +7,16 @@ const FAMILY_WORD_BY_LANGUAGE = {
 };
 const SHARE_MESSAGES_BY_LANGUAGE = {
   "en-CA": {
-    button_show: "Share this pass",
-    button_hide: "Hide sharing code",
+    button_show: "Set up another phone",
+    button_hide: "Hide setup code",
     heading: "Set up another phone",
     body: "Ask another caregiver to scan this code to save their own OpenDoor Pass for this family.",
     qr_label: "QR code to set up OpenDoor Pass on another phone",
     unavailable: "OpenDoor Pass must be set up on this phone before it can be shared.",
   },
   "fr-CA": {
-    button_show: "Partager cette passe",
-    button_hide: "Masquer le code de partage",
+    button_show: "Configurer un autre telephone",
+    button_hide: "Masquer le code",
     heading: "Configurer un autre telephone",
     body: "Demandez a une autre personne responsable de scanner ce code pour enregistrer sa propre passe OpenDoor pour cette famille.",
     qr_label: "Code QR pour configurer OpenDoor Pass sur un autre telephone",
